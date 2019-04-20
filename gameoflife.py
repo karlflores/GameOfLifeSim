@@ -2,24 +2,63 @@ import numpy as np
 import argparse
 from matplotlib import cm
 import random
+from PIL import Image
+import PIL.ImageOps
 import datetime as dt
 from copy import deepcopy
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from enum import Enum
 class Neighbours(object):
-    MOORE = [(0,1),(0,-1),(1,0),(-1,0)]
+    VON_NEUMANN = [(0,1),(0,-1),(1,0),(-1,0)]
 
-    VON_NEUMANN = [(-1,-1),(-1,0),(1,0),(1,1),
+    MOORE = [(-1,-1),(-1,0),(1,0),(1,1),
                    (0,1),(0,-1),(-1,1),(1,-1)]
 
 class GameOfLife(object):
 
-    def __init__(self,size=10,neighbours=Neighbours.VON_NEUMANN):
+    def __init__(self,size=10,neighbours=Neighbours.MOORE):
         self.board = np.zeros((size,size),dtype=int)
         self.size = size 
         self.iteration = 0
         self.neighbours = neighbours 
+    
+    def image_to_np_arr(self,img_path):
+        # load the image 
+        img = Image.open(img_path).convert('1')
+        img_resized = img.resize((self.size,self.size))
+        img_arr_rs = np.asarray(img_resized, dtype="int")
+        img_inv = self.invert(deepcopy(img_arr_rs))
+        b,w = self.pcent_bw(img_arr_rs)
+        if w < b:
+            img = img_inv
+        else:
+            img = img_arr_rs
+         
+        return img 
+    
+    def invert(self,img):
+        for i in range(self.size):
+            for j in range(self.size):
+                if img[i][j] == 1:
+                    img[i][j] = 0
+                else:
+                    img[i][j] = 1
+        return img
+    def pcent_bw(self,img):
+        num_w = 0
+        num_b = 0
+        for i in range(self.size):
+            for j in range(self.size):
+                if img[i][j] == 1:
+                    num_w += 1
+                else:
+                    num_b += 1
+        return num_w,num_b
+
+    def process_img(self,img_path):
+        data = self.image_to_np_arr(img_path)
+        self.board = data
 
     def init_population(self,init_alive):
         cells = set()
@@ -33,7 +72,7 @@ class GameOfLife(object):
 
         for (x,y) in cells: 
             self.board[self.size-y][self.size-x] = 1
-
+        print("LEN CELLS: ", len(cells))
     def iterate(self):
 
         alive_cells = []
@@ -75,13 +114,10 @@ class GameOfLife(object):
         for (r_offset,c_offset) in self.neighbours:
             new_r = row + r_offset
             new_c = col + c_offset
-            if new_r in [-1,self.size]:
-                continue
-
-            if new_c in [-1,self.size]:
-                continue
             
-            if self.board[new_r][new_c] == 0:
+            # assume a toroidal board --> wrap around of coordinates 
+
+            if self.board[new_r%self.size][new_c%self.size] == 0:
                 num_dead += 1
             else:
                 num_alive += 1
@@ -89,6 +125,8 @@ class GameOfLife(object):
 
     def get_frames(self,num_itr):
         frames = []
+        for i in range(10):
+            frames.append(deepcopy(self.board))
         for i in range(num_itr):
             frames.append(self.iterate())
 
@@ -133,14 +171,19 @@ if __name__ == "__main__":
     parser.add_argument('-n', '--neighbours',
                             help='Neighbour Type',
                             choices={"vn", "moore"},
-                            default="vn",
+                            default="moore",
                             type=str)
 
     parser.add_argument('-g', '--generations',
                             help='Generations of Simulation',
                             default=100,
                             type=int)
+    parser.add_argument('-i', '--image',
+                            help='Image Location',
+                            default=None,
+                            type=str)
     args = parser.parse_args()
+
     if args.neighbours == "vn":
         nb = Neighbours.VON_NEUMANN
     else:
@@ -150,12 +193,15 @@ if __name__ == "__main__":
     size = args.size
     iterations = args.generations
     game = GameOfLife(size,neighbours=nb)
-    game.init_population(int(size*size*pcent*0.01))
-    # plt.imshow(game.board, interpolation='nearest')
-    # plt.show()
+    if args.image is not None: 
+        game.process_img(args.image)
+    else: 
+        game.init_population(int(size*size*pcent*0.01))
+    #plt.imshow(game.board, interpolation='nearest')
+    #plt.show()
 
     fig, ims = game.animate(iterations)
-    ani = animation.ArtistAnimation(fig, ims, interval=25, blit=True, repeat_delay=1000)
+    ani = animation.ArtistAnimation(fig, ims, interval=30, blit=True, repeat_delay=1000)
     ani.save('gol_prop{}_s{}_itr{}_time_{}.mp4'.format(pcent,
                                                        size,
                                                        iterations,
